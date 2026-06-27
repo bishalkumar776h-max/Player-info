@@ -1,40 +1,51 @@
-# app.py - Free Fire API Server (Vercel/Render Compatible)
-# Run: python app.py
+# app.py - Simple Flask API for Testing
 
-import asyncio
-import time
-import httpx
-import json
-import os
-import sys
-import threading
-import re
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 from flask_cors import CORS
-from cachetools import TTLCache
-from google.protobuf import json_format
-from Crypto.Cipher import AES
-import base64
-import pickle
-from datetime import datetime
 
-# ============= CREDITS =============
-# ⚡ DEVELOPED BY: BISHAL & SENKU
-# 🔥 Free Fire API Server v3.0
-# ====================================
+app = Flask(__name__)
+CORS(app)
 
-# ============= PATH FIX =============
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_dir = os.path.join(current_dir, 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
+@app.route('/')
+def home():
+    return jsonify({
+        "status": "online",
+        "message": "API is working!",
+        "credit": "Developed by BISHAL & SENKU",
+        "endpoints": {
+            "/": "This page",
+            "/get": "Get player info (uid required)",
+            "/status": "Check status"
+        }
+    })
 
-try:
-    from proto import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
-    print("✅ Proto files imported successfully")
-except ImportError:
-    try:
-        import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
+@app.route('/get')
+def get_info():
+    uid = request.args.get('uid')
+    if not uid:
+        return jsonify({
+            "error": "UID required",
+            "example": "/get?uid=1576195175"
+        }), 400
+    
+    return jsonify({
+        "status": "success",
+        "uid": uid,
+        "message": "Working! Full API coming soon",
+        "credit": "Developed by BISHAL & SENKU"
+    })
+
+@app.route('/status')
+def status():
+    return jsonify({
+        "status": "online",
+        "version": "1.0",
+        "credit": "Developed by BISHAL & SENKU"
+    })
+
+# For Vercel/Render
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)        import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
         print("✅ Proto files imported directly")
     except ImportError as e:
         print(f"❌ Proto import error: {e}")
