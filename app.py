@@ -1,51 +1,39 @@
-# app.py - Simple Flask API for Testing
+# app.py - Free Fire API (Vercel/Render Compatible)
+# ⚡ Developed by: BISHAL & SENKU
 
-from flask import Flask, jsonify
+import asyncio
+import time
+import httpx
+import json
+import os
+import sys
+import re
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+from cachetools import TTLCache
+from google.protobuf import json_format
+from Crypto.Cipher import AES
+import base64
+import pickle
+from datetime import datetime
 
-app = Flask(__name__)
-CORS(app)
+# ============= CREDITS =============
+# ⚡ DEVELOPED BY: BISHAL & SENKU
+# 🔥 Free Fire API Server v3.0
+# ====================================
 
-@app.route('/')
-def home():
-    return jsonify({
-        "status": "online",
-        "message": "API is working!",
-        "credit": "Developed by BISHAL & SENKU",
-        "endpoints": {
-            "/": "This page",
-            "/get": "Get player info (uid required)",
-            "/status": "Check status"
-        }
-    })
+# ============= PATH FIX =============
+current_dir = os.path.dirname(os.path.abspath(__file__))
+proto_dir = os.path.join(current_dir, 'proto')
+if proto_dir not in sys.path:
+    sys.path.insert(0, proto_dir)
 
-@app.route('/get')
-def get_info():
-    uid = request.args.get('uid')
-    if not uid:
-        return jsonify({
-            "error": "UID required",
-            "example": "/get?uid=1576195175"
-        }), 400
-    
-    return jsonify({
-        "status": "success",
-        "uid": uid,
-        "message": "Working! Full API coming soon",
-        "credit": "Developed by BISHAL & SENKU"
-    })
-
-@app.route('/status')
-def status():
-    return jsonify({
-        "status": "online",
-        "version": "1.0",
-        "credit": "Developed by BISHAL & SENKU"
-    })
-
-# For Vercel/Render
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)        import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
+try:
+    from proto import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
+    print("✅ Proto files imported successfully")
+except ImportError:
+    try:
+        import FreeFire_pb2, main_pb2, AccountPersonalShow_pb2
         print("✅ Proto files imported directly")
     except ImportError as e:
         print(f"❌ Proto import error: {e}")
@@ -68,8 +56,70 @@ CACHE_TTL = 300
 app = Flask(__name__)
 CORS(app)
 cache = TTLCache(maxsize=200, ttl=CACHE_TTL)
-token_manager = None
+token_cache = {}
 request_cache = {}
+
+# ======================== LOAD TOKENS ==========================
+def load_cached_tokens():
+    try:
+        if os.path.exists(TOKEN_CACHE_FILE):
+            with open(TOKEN_CACHE_FILE, 'rb') as f:
+                saved = pickle.load(f)
+                now = time.time()
+                for r, info in saved.items():
+                    if info.get('expires_at', 0) > now:
+                        token_cache[r] = info
+                        print(f"✅ Loaded cached token: {r}")
+    except Exception as e:
+        print(f"❌ Load tokens error: {e}")
+
+def save_cached_tokens():
+    try:
+        with open(TOKEN_CACHE_FILE, 'wb') as f:
+            pickle.dump(dict(token_cache), f)
+    except Exception as e:
+        print(f"❌ Save tokens error: {e}")
+
+# ======================== REQUEST CACHE ==========================
+def load_request_cache():
+    global request_cache
+    try:
+        if os.path.exists(REQUEST_CACHE_FILE):
+            with open(REQUEST_CACHE_FILE, 'rb') as f:
+                request_cache = pickle.load(f)
+                now = time.time()
+                request_cache = {k: v for k, v in request_cache.items() 
+                                if v.get('expires_at', 0) > now}
+                print(f"✅ Loaded {len(request_cache)} cached requests")
+    except Exception as e:
+        print(f"❌ Load request cache error: {e}")
+        request_cache = {}
+
+def save_request_cache():
+    try:
+        with open(REQUEST_CACHE_FILE, 'wb') as f:
+            pickle.dump(request_cache, f)
+    except Exception as e:
+        print(f"❌ Save request cache error: {e}")
+
+def get_cached_response(uid):
+    if uid in request_cache:
+        cached = request_cache[uid]
+        if cached.get('expires_at', 0) > time.time():
+            print(f"📦 Cache hit for UID: {uid}")
+            return cached.get('data')
+        else:
+            del request_cache[uid]
+            save_request_cache()
+    return None
+
+def cache_response(uid, data):
+    request_cache[uid] = {
+        'data': data,
+        'expires_at': time.time() + CACHE_TTL,
+        'cached_at': time.time()
+    }
+    save_request_cache()
 
 # ======================== ASCII DISPLAY ==========================
 def create_ascii_box(title, data_lines):
@@ -164,172 +214,6 @@ def format_ascii_response(data, region_used=None):
         "socialinfo": {}
     }
 
-# ======================== REQUEST CACHE ==========================
-def load_request_cache():
-    global request_cache
-    try:
-        if os.path.exists(REQUEST_CACHE_FILE):
-            with open(REQUEST_CACHE_FILE, 'rb') as f:
-                request_cache = pickle.load(f)
-                now = time.time()
-                request_cache = {k: v for k, v in request_cache.items() 
-                                if v.get('expires_at', 0) > now}
-                print(f"✅ Loaded {len(request_cache)} cached requests")
-    except Exception as e:
-        print(f"❌ Load request cache error: {e}")
-        request_cache = {}
-
-def save_request_cache():
-    try:
-        with open(REQUEST_CACHE_FILE, 'wb') as f:
-            pickle.dump(request_cache, f)
-    except Exception as e:
-        print(f"❌ Save request cache error: {e}")
-
-def get_cached_response(uid):
-    if uid in request_cache:
-        cached = request_cache[uid]
-        if cached.get('expires_at', 0) > time.time():
-            print(f"📦 Cache hit for UID: {uid}")
-            return cached.get('data')
-        else:
-            del request_cache[uid]
-            save_request_cache()
-    return None
-
-def cache_response(uid, data):
-    request_cache[uid] = {
-        'data': data,
-        'expires_at': time.time() + CACHE_TTL,
-        'cached_at': time.time()
-    }
-    save_request_cache()
-
-# === Token Manager ===
-class TokenManager:
-    def __init__(self):
-        self.tokens = {}
-        self.lock = asyncio.Lock()
-        self.load_tokens()
-        self.region_stats = {}
-
-    def load_tokens(self):
-        try:
-            if os.path.exists(TOKEN_CACHE_FILE):
-                with open(TOKEN_CACHE_FILE, 'rb') as f:
-                    saved = pickle.load(f)
-                    now = time.time()
-                    for r, info in saved.items():
-                        if info.get('expires_at', 0) > now:
-                            self.tokens[r] = info
-                            print(f"✅ Loaded cached token: {r}")
-        except Exception as e:
-            print(f"❌ Load tokens error: {e}")
-
-    def save_tokens(self):
-        try:
-            with open(TOKEN_CACHE_FILE, 'wb') as f:
-                pickle.dump(dict(self.tokens), f)
-        except Exception as e:
-            print(f"❌ Save tokens error: {e}")
-
-    async def get_token(self, region: str):
-        async with self.lock:
-            info = self.tokens.get(region)
-            if info and info.get('expires_at', 0) > time.time():
-                return info
-            
-            new_token = await self.generate_token(region)
-            if new_token:
-                self.tokens[region] = new_token
-                self.save_tokens()
-                self.region_stats[region] = {'success': True, 'last_update': time.time()}
-                return new_token
-            else:
-                self.region_stats[region] = {'success': False, 'last_update': time.time()}
-                return None
-
-    async def generate_token(self, region: str):
-        try:
-            account = get_account_credentials(region)
-            token_val, open_id = await get_access_token(account)
-            if not token_val or not open_id:
-                return None
-            
-            body = json.dumps({
-                "open_id": open_id,
-                "open_id_type": "4",
-                "login_token": token_val,
-                "orign_platform_type": "4"
-            })
-            
-            proto_bytes = await json_to_proto(body, FreeFire_pb2.LoginReq())
-            payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
-            
-            url = "https://loginbp.ggpolarbear.com/MajorLogin"
-            headers = {
-                'User-Agent': USERAGENT,
-                'Connection': 'Keep-Alive',
-                'Accept-Encoding': 'deflate, gzip',
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': '*/*',
-                'X-Unity-Version': '2022.3.47f1',
-                'X-GA': 'v1 1',
-                'ReleaseVersion': RELEASEVERSION
-            }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, data=payload, headers=headers)
-                
-                if resp.status_code != 200:
-                    print(f"❌ MajorLogin {resp.status_code} for {region}")
-                    return None
-                
-                login_res = FreeFire_pb2.LoginRes()
-                login_res.ParseFromString(resp.content)
-                msg = json.loads(json_format.MessageToJson(login_res))
-                
-                token_info = {
-                    'token': f"Bearer {msg.get('token','0')}",
-                    'region': msg.get('lockRegion','0'),
-                    'server_url': msg.get('serverUrl','0'),
-                    'expires_at': time.time() + 25200
-                }
-                print(f"✅ Token generated: {region}")
-                return token_info
-                
-        except Exception as e:
-            print(f"❌ generate_token error [{region}]: {e}")
-            return None
-
-    def get_best_region(self):
-        if not self.tokens:
-            return None
-        
-        valid_regions = []
-        for region, info in self.tokens.items():
-            if info.get('expires_at', 0) > time.time():
-                stats = self.region_stats.get(region, {})
-                if stats.get('success', True):
-                    valid_regions.append(region)
-        
-        if valid_regions:
-            for r in REGION_PRIORITY:
-                if r in valid_regions:
-                    return r
-        return None
-
-    async def refresh_all_tokens(self):
-        tasks = [self.get_token(r) for r in REGION_PRIORITY]
-        await asyncio.gather(*tasks)
-        self.save_tokens()
-
-    async def auto_refresh_loop(self):
-        while True:
-            await asyncio.sleep(6 * 60 * 60)
-            print("🔄 Auto-refreshing all tokens...")
-            await self.refresh_all_tokens()
-
 # === Helper Functions ===
 def pad(text: bytes) -> bytes:
     n = AES.block_size - (len(text) % AES.block_size)
@@ -374,9 +258,79 @@ async def get_access_token(account: str):
             await asyncio.sleep(2)
     return None, None
 
+async def generate_token(region: str):
+    try:
+        account = get_account_credentials(region)
+        token_val, open_id = await get_access_token(account)
+        if not token_val or not open_id:
+            return None
+        
+        body = json.dumps({
+            "open_id": open_id,
+            "open_id_type": "4",
+            "login_token": token_val,
+            "orign_platform_type": "4"
+        })
+        
+        proto_bytes = await json_to_proto(body, FreeFire_pb2.LoginReq())
+        payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
+        
+        url = "https://loginbp.ggpolarbear.com/MajorLogin"
+        headers = {
+            'User-Agent': USERAGENT,
+            'Connection': 'Keep-Alive',
+            'Accept-Encoding': 'deflate, gzip',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': '*/*',
+            'X-Unity-Version': '2022.3.47f1',
+            'X-GA': 'v1 1',
+            'ReleaseVersion': RELEASEVERSION
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, data=payload, headers=headers)
+            
+            if resp.status_code != 200:
+                print(f"❌ MajorLogin {resp.status_code} for {region}")
+                return None
+            
+            login_res = FreeFire_pb2.LoginRes()
+            login_res.ParseFromString(resp.content)
+            msg = json.loads(json_format.MessageToJson(login_res))
+            
+            token_info = {
+                'token': f"Bearer {msg.get('token','0')}",
+                'region': msg.get('lockRegion','0'),
+                'server_url': msg.get('serverUrl','0'),
+                'expires_at': time.time() + 25200
+            }
+            print(f"✅ Token generated: {region}")
+            return token_info
+            
+    except Exception as e:
+        print(f"❌ generate_token error [{region}]: {e}")
+        return None
+
+def get_token(region: str):
+    if region in token_cache:
+        info = token_cache[region]
+        if info.get('expires_at', 0) > time.time():
+            return info
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    token = loop.run_until_complete(generate_token(region))
+    loop.close()
+    
+    if token:
+        token_cache[region] = token
+        save_cached_tokens()
+        return token
+    return None
+
 async def GetAccountInformation(uid, region):
     try:
-        token_info = await token_manager.get_token(region)
+        token_info = get_token(region)
         if not token_info:
             return None
         
@@ -415,51 +369,6 @@ def get_player_level(data):
     basic = data.get("basicInfo", {})
     return int(basic.get("level", 0))
 
-# ======================== SMART REGION DETECTION ==========================
-async def check_all_regions_parallel(uid):
-    regions_to_check = [r for r in REGION_PRIORITY if r in token_manager.tokens]
-    
-    if not regions_to_check:
-        print("⚠️ No tokens available")
-        return None, None
-    
-    print(f"🚀 Checking {len(regions_to_check)} regions in parallel...")
-    start_time = time.time()
-    
-    tasks = []
-    for region in regions_to_check:
-        task = asyncio.create_task(GetAccountInformation(uid, region))
-        tasks.append((region, task))
-    
-    results = []
-    for region, task in tasks:
-        try:
-            data = await asyncio.wait_for(task, timeout=10.0)
-            if data:
-                level = get_player_level(data)
-                results.append({
-                    'region': region,
-                    'data': data,
-                    'level': level
-                })
-                print(f"✅ {region}: Level {level}")
-            else:
-                print(f"❌ {region}: No data")
-        except asyncio.TimeoutError:
-            print(f"⏰ {region}: Timeout")
-        except Exception as e:
-            print(f"❌ {region}: Error - {e}")
-    
-    elapsed = time.time() - start_time
-    print(f"⏱️ All regions checked in {elapsed:.2f} seconds")
-    
-    if results:
-        best = max(results, key=lambda x: x['level'])
-        print(f"🏆 Best region: {best['region']} (Level {best['level']})")
-        return best['region'], best['data']
-    
-    return None, None
-
 # ======================== FLASK ROUTES ==========================
 @app.route('/')
 def home():
@@ -471,9 +380,7 @@ def home():
         "credit": "Developed by BISHAL & SENKU",
         "features": {
             "smart_region_detection": True,
-            "parallel_requests": True,
-            "response_caching": True,
-            "token_auto_refresh": True
+            "response_caching": True
         },
         "endpoints": {
             "/get": {
@@ -502,11 +409,12 @@ def get_account_info():
             "message": "Please provide a Free Fire UID",
             "credit": "Developed by BISHAL & SENKU",
             "endpoints": {
-                "GET /get?uid=UID": "Smart auto-detection (parallel)",
+                "GET /get?uid=UID": "Smart auto-detection",
                 "GET /get?uid=UID&region=BD": "Force specific region",
                 "GET /status": "Token status",
                 "GET /refresh": "Force refresh tokens",
-                "GET /stats": "API statistics"
+                "GET /stats": "API statistics",
+                "GET /clear_cache": "Clear response cache"
             }
         }), 400
     
@@ -541,16 +449,19 @@ def get_account_info():
                 "credit": "Developed by BISHAL & SENKU"
             }), 404
     
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    best_region, best_data = loop.run_until_complete(check_all_regions_parallel(uid))
-    loop.close()
-    
-    if best_data:
-        response = format_ascii_response(best_data, best_region)
-        response['from_cache'] = False
-        cache_response(uid, response)
-        return jsonify(response)
+    for region in REGION_PRIORITY:
+        print(f"🌍 Trying {region}...")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        data = loop.run_until_complete(GetAccountInformation(uid, region))
+        loop.close()
+        
+        if data:
+            print(f"✅ Success with {region}")
+            response = format_ascii_response(data, region)
+            response['from_cache'] = False
+            cache_response(uid, response)
+            return jsonify(response)
     
     return jsonify({
         "error": "Player not found in any region",
@@ -560,32 +471,35 @@ def get_account_info():
 @app.route('/status')
 def token_status():
     status = {}
-    for region, info in token_manager.tokens.items():
+    for region, info in token_cache.items():
         expires_in = info['expires_at'] - time.time()
         status[region] = {
             "has_token": True,
             "expires_in": f"{expires_in/3600:.1f} hours",
-            "is_valid": expires_in > 0,
-            "server_url": info['server_url'][:50] + "..."
+            "is_valid": expires_in > 0
         }
     
     return jsonify({
         "credit": "Developed by BISHAL & SENKU",
-        "region_priority": REGION_PRIORITY,
-        "total_tokens": len(token_manager.tokens),
+        "total_tokens": len(token_cache),
         "cached_requests": len(request_cache),
         "tokens": status
     })
 
 @app.route('/refresh')
 def refresh_tokens():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(token_manager.refresh_all_tokens())
-    loop.close()
+    for region in REGION_PRIORITY:
+        token_cache.pop(region, None)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        token = loop.run_until_complete(generate_token(region))
+        loop.close()
+        if token:
+            token_cache[region] = token
+    save_cached_tokens()
     return jsonify({
         "status": "refreshed",
-        "count": len(token_manager.tokens),
+        "count": len(token_cache),
         "credit": "Developed by BISHAL & SENKU"
     })
 
@@ -596,12 +510,12 @@ def api_stats():
         "timestamp": datetime.now().isoformat(),
         "stats": {
             "cached_responses": len(request_cache),
-            "active_tokens": len(token_manager.tokens) if token_manager else 0,
+            "active_tokens": len(token_cache),
             "supported_regions": len(SUPPORTED_REGIONS)
         },
         "regions": {
             "priority": REGION_PRIORITY,
-            "available": list(token_manager.tokens.keys()) if token_manager else []
+            "available": list(token_cache.keys())
         }
     })
 
@@ -615,38 +529,27 @@ def clear_cache():
         "credit": "Developed by BISHAL & SENKU"
     })
 
-# ======================== STARTUP ==========================
-def start_background_tasks():
-    global token_manager
-    token_manager = TokenManager()
-    load_request_cache()
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+# ======================== LOAD CACHE ON STARTUP ==========================
+load_cached_tokens()
+load_request_cache()
 
-    print("🎯 Generating tokens for all regions...")
-    for region in REGION_PRIORITY:
-        try:
-            loop.run_until_complete(token_manager.get_token(region))
-        except Exception as e:
-            print(f"⚠️ {region}: {e}")
+print("🎯 Generating tokens for priority regions...")
+for region in ["ME", "BD", "IND"]:
+    if region not in token_cache:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        token = loop.run_until_complete(generate_token(region))
+        loop.close()
+        if token:
+            token_cache[region] = token
+            save_cached_tokens()
+            print(f"✅ Token generated for {region}")
 
-    loop.run_forever()
+print(f"✅ Total tokens: {len(token_cache)}")
 
-# ======================== FOR RENDER/VERCEL ==========================
-def create_app():
-    """Create and configure Flask app"""
-    # Start background tasks in a thread
-    bg = threading.Thread(target=start_background_tasks, daemon=True)
-    bg.start()
-    
-    print("⏳ Initializing tokens...")
-    time.sleep(10)
-    
-    return app
-
-# For Vercel - this is the entry point
-app = create_app()
+# ======================== FOR VERCEL ==========================
+# IMPORTANT: Vercel needs this
+app = app
 
 # ======================== FOR LOCAL RUN ==========================
 if __name__ == '__main__':
@@ -654,7 +557,8 @@ if __name__ == '__main__':
     print("🚀 Free Fire API Server v3.0")
     print("=" * 55)
     print("⚡ Developed by: BISHAL & SENKU")
-    print("🔥 Local Server Mode")
+    print("🔥 Vercel/Render Compatible")
     print("=" * 55)
-    
+    print(f"✅ Tokens loaded: {len(token_cache)}")
+    print("=" * 55)
     app.run(host='0.0.0.0', port=5000, debug=False)
