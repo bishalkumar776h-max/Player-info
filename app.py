@@ -1,5 +1,5 @@
-# server.py - Free Fire API Server (Vercel/Render Compatible)
-# Run: python server.py
+# app.py - Free Fire API Server (Vercel/Render Compatible)
+# Run: python app.py
 
 import asyncio
 import time
@@ -38,7 +38,9 @@ except ImportError:
         print("✅ Proto files imported directly")
     except ImportError as e:
         print(f"❌ Proto import error: {e}")
-        sys.exit(1)
+        FreeFire_pb2 = None
+        main_pb2 = None
+        AccountPersonalShow_pb2 = None
 
 # === Settings ===
 MAIN_KEY = base64.b64decode('WWcmdGMlREV1aDYlWmNeOA==')
@@ -51,6 +53,7 @@ TOKEN_CACHE_FILE = 'token_cache.pkl'
 REQUEST_CACHE_FILE = 'request_cache.pkl'
 CACHE_TTL = 300
 
+# ======================== CREATE FLASK APP ==========================
 app = Flask(__name__)
 CORS(app)
 cache = TTLCache(maxsize=200, ttl=CACHE_TTL)
@@ -59,7 +62,6 @@ request_cache = {}
 
 # ======================== ASCII DISPLAY ==========================
 def create_ascii_box(title, data_lines):
-    """Create simple ASCII box - Cross platform compatible"""
     border = "=" * 50
     result = []
     result.append(border)
@@ -73,7 +75,6 @@ def create_ascii_box(title, data_lines):
     return "\n".join(result)
 
 def format_ascii_response(data, region_used=None):
-    """Format response with simple ASCII"""
     if not data:
         return {"error": "No data"}
     
@@ -405,7 +406,6 @@ def get_player_level(data):
 
 # ======================== SMART REGION DETECTION ==========================
 async def check_all_regions_parallel(uid):
-    """Check all regions in parallel and return the best result"""
     regions_to_check = [r for r in REGION_PRIORITY if r in token_manager.tokens]
     
     if not regions_to_check:
@@ -622,28 +622,28 @@ def start_background_tasks():
 
     loop.run_forever()
 
-# For Vercel/Render - use this as entry point
-if __name__ == '__main__':
-    print("=" * 55)
-    print("🚀 Free Fire API Server v3.0")
-    print("=" * 55)
-    print("⚡ Developed by: BISHAL & SENKU")
-    print("🔥 Vercel/Render Compatible Version")
-    print("=" * 55)
-    
-    # Start background tasks
+# ======================== FOR RENDER/VERCEL ==========================
+def create_app():
+    """Create and configure Flask app"""
+    # Start background tasks in a thread
     bg = threading.Thread(target=start_background_tasks, daemon=True)
     bg.start()
     
     print("⏳ Initializing tokens...")
     time.sleep(10)
     
+    return app
+
+# For Vercel - this is the entry point
+app = create_app()
+
+# ======================== FOR LOCAL RUN ==========================
+if __name__ == '__main__':
     print("=" * 55)
-    print("🚀 API running on port 5000")
-    print("💡 Credit: Developed by BISHAL & SENKU")
+    print("🚀 Free Fire API Server v3.0")
+    print("=" * 55)
+    print("⚡ Developed by: BISHAL & SENKU")
+    print("🔥 Local Server Mode")
     print("=" * 55)
     
     app.run(host='0.0.0.0', port=5000, debug=False)
-
-# For Vercel - need to expose app
-app = app
