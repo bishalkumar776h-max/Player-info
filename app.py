@@ -1,4 +1,4 @@
-# app.py - Free Fire API (Vercel Compatible - Smart Region Detection)
+# app.py - Free Fire API (Fast Parallel Region Check)
 # ⚡ Developed by: BISHAL & SENKU
 
 import time
@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import re
+import concurrent.futures
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.protobuf import json_format
@@ -269,33 +270,80 @@ def get_player_level(data):
     basic = data.get("basicInfo", {})
     return int(basic.get("level", 0))
 
-# ======================== SMART REGION DETECTION ==========================
-def check_all_regions_sync(uid):
-    """Check all regions and return the one with highest level"""
-    results = []
-    
-    print(f"\n🔍 Checking all regions for UID: {uid}")
-    
-    for region in REGION_PRIORITY:
-        print(f"🌍 Trying {region}...")
+# ======================== PARALLEL REGION CHECK ==========================
+def check_region_parallel(uid, region):
+    """Check single region - for parallel execution"""
+    try:
         data = GetAccountInformationSync(uid, region)
-        
         if data:
             level = get_player_level(data)
-            results.append({
+            return {
                 'region': region,
                 'data': data,
-                'level': level
-            })
-            print(f"✅ {region}: Level {level}")
+                'level': level,
+                'success': True
+            }
         else:
-            print(f"❌ {region}: No data")
+            return {
+                'region': region,
+                'data': None,
+                'level': 0,
+                'success': False
+            }
+    except Exception as e:
+        print(f"❌ {region} error: {e}")
+        return {
+            'region': region,
+            'data': None,
+            'level': 0,
+            'success': False
+        }
+
+def check_all_regions_parallel(uid):
+    """Check ALL regions in PARALLEL and return highest level"""
+    print(f"\n🚀 Checking ALL {len(REGION_PRIORITY)} regions in PARALLEL...")
+    start_time = time.time()
     
-    if results:
+    results = []
+    
+    # Use ThreadPoolExecutor for parallel execution
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit all region checks
+        future_to_region = {
+            executor.submit(check_region_parallel, uid, region): region 
+            for region in REGION_PRIORITY
+        }
+        
+        # Collect results
+        for future in concurrent.futures.as_completed(future_to_region):
+            region = future_to_region[future]
+            try:
+                result = future.result()
+                results.append(result)
+                if result['success']:
+                    print(f"✅ {region}: Level {result['level']}")
+                else:
+                    print(f"❌ {region}: No data")
+            except Exception as e:
+                print(f"❌ {region}: Error - {e}")
+                results.append({
+                    'region': region,
+                    'data': None,
+                    'level': 0,
+                    'success': False
+                })
+    
+    elapsed = time.time() - start_time
+    print(f"⏱️ All regions checked in {elapsed:.2f} seconds")
+    
+    # Filter successful results
+    successful = [r for r in results if r['success']]
+    
+    if successful:
         # Sort by level (highest first)
-        results.sort(key=lambda x: x['level'], reverse=True)
-        best = results[0]
-        print(f"\n🏆 Best region: {best['region']} (Level {best['level']})")
+        successful.sort(key=lambda x: x['level'], reverse=True)
+        best = successful[0]
+        print(f"\n🏆 BEST REGION: {best['region']} (Level {best['level']})")
         return best['region'], best['data']
     
     return None, None
@@ -310,45 +358,35 @@ def home():
         "release": RELEASEVERSION,
         "credit": "Developed by BISHAL & SENKU",
         "features": {
-            "smart_region_detection": True,
+            "parallel_region_check": True,
             "highest_level_selection": True,
+            "all_regions_checked": True,
             "response_caching": True
         },
         "endpoints": {
             "/get": {
                 "method": "GET",
                 "params": {
-                    "uid": "required - Free Fire UID",
-                    "region": "optional - Force specific region"
+                    "uid": "required - Free Fire UID"
                 },
-                "example": "/get?uid=123456789",
-                "description": "Checks all regions and returns the one with highest level"
+                "example": "/get?uid=1576195175",
+                "description": "Checks ALL regions in parallel and returns highest level"
             },
-            "/status": "GET - Token and region status",
+            "/status": "GET - Token status",
             "/refresh": "GET - Force refresh tokens",
-            "/stats": "GET - API statistics",
-            "/clear_cache": "GET - Clear response cache"
+            "/stats": "GET - API statistics"
         }
     })
 
 @app.route('/get')
 def get_account_info():
     uid = request.args.get('uid')
-    region_param = request.args.get('region', '').upper()
     
     if not uid:
         return jsonify({
             "error": "UID required",
-            "message": "Please provide a Free Fire UID",
             "credit": "Developed by BISHAL & SENKU",
-            "endpoints": {
-                "GET /get?uid=UID": "Smart auto-detection (all regions)",
-                "GET /get?uid=UID&region=BD": "Force specific region",
-                "GET /status": "Token status",
-                "GET /refresh": "Force refresh tokens",
-                "GET /stats": "API statistics",
-                "GET /clear_cache": "Clear response cache"
-            }
+            "example": "/get?uid=1576195175"
         }), 400
     
     if not re.match(r'^\d{5,15}$', uid):
@@ -363,45 +401,10 @@ def get_account_info():
     if cached_data:
         return jsonify(cached_data)
     
-    # If user specified region, use it directly
-    if region_param and region_param in SUPPORTED_REGIONS:
-        print(f"\n🎯 User specified region: {region_param}")
-        data = GetAccountInformationSync(uid, region_param)
-        
-        if data:
-            basic = data.get("basicInfo", {})
-            clan = data.get("clanBasicInfo", {})
-            profile = data.get("profileInfo", {})
-            
-            response = {
-                "status": "success",
-                "timestamp": datetime.now().isoformat(),
-                "region_used": region_param,
-                "region_detected": "user_specified",
-                "credit": "Developed by BISHAL & SENKU",
-                "AccountInfo": {
-                    "AccountName": basic.get("nickname", "Unknown"),
-                    "AccountLevel": str(basic.get("level", "0")),
-                    "AccountRegion": basic.get("region", "Unknown"),
-                    "AccountLikes": str(basic.get("liked", "0")),
-                    "AccountEXP": str(basic.get("exp", "0")),
-                    "BrRankPoint": str(basic.get("rankingPoints", "0")),
-                    "CsRankPoint": str(basic.get("csRankingPoints", "0")),
-                    "GuildName": clan.get("clanName", "No Guild"),
-                    "EquippedWeapon": basic.get("weaponSkinShows", []),
-                    "EquippedOutfit": profile.get("clothes", [])
-                }
-            }
-            cache_response(uid, response)
-            return jsonify(response)
-        else:
-            return jsonify({
-                "error": "Player not found in specified region",
-                "credit": "Developed by BISHAL & SENKU"
-            }), 404
+    print(f"\n🔍 Processing UID: {uid}")
     
-    # Smart detection - check all regions and get highest level
-    best_region, best_data = check_all_regions_sync(uid)
+    # Check ALL regions in PARALLEL
+    best_region, best_data = check_all_regions_parallel(uid)
     
     if best_data:
         basic = best_data.get("basicInfo", {})
@@ -412,8 +415,8 @@ def get_account_info():
             "status": "success",
             "timestamp": datetime.now().isoformat(),
             "region_used": best_region,
-            "region_detected": "highest_level",
             "credit": "Developed by BISHAL & SENKU",
+            "all_regions_checked": True,
             "AccountInfo": {
                 "AccountName": basic.get("nickname", "Unknown"),
                 "AccountLevel": str(basic.get("level", "0")),
@@ -425,9 +428,7 @@ def get_account_info():
                 "GuildName": clan.get("clanName", "No Guild"),
                 "EquippedWeapon": basic.get("weaponSkinShows", []),
                 "EquippedOutfit": profile.get("clothes", [])
-            },
-            "AllRegionsChecked": True,
-            "BestRegionLevel": get_player_level(best_data)
+            }
         }
         
         cache_response(uid, response)
@@ -496,19 +497,12 @@ def clear_cache():
         "credit": "Developed by BISHAL & SENKU"
     })
 
-# ======================== LOAD CACHE ON STARTUP ==========================
+# ======================== LOAD CACHE ==========================
 load_cached_tokens()
 load_request_cache()
 
-print("=" * 55)
-print("🚀 Free Fire API Server v3.0 - Smart Region Detection")
-print("=" * 55)
-print("⚡ Developed by: BISHAL & SENKU")
-print("🔥 Smart Feature: Checks all regions and returns highest level")
-print("=" * 55)
-
-print("\n🎯 Generating tokens...")
-for region in ["ME", "BD", "IND"]:
+print("🎯 Generating tokens...")
+for region in REGION_PRIORITY:
     if region not in token_cache:
         token = generate_token_sync(region)
         if token:
@@ -516,15 +510,16 @@ for region in ["ME", "BD", "IND"]:
             save_cached_tokens()
             print(f"✅ Token generated for {region}")
 
-print(f"\n✅ Total tokens: {len(token_cache)}")
-print("=" * 55)
+print(f"✅ Total tokens: {len(token_cache)}")
 
 # ======================== FOR VERCEL ==========================
 app = app
 
-# ======================== FOR LOCAL RUN ==========================
 if __name__ == '__main__':
-    print("🚀 Running on http://localhost:5000")
-    print("📝 Example: http://localhost:5000/get?uid=1576195175")
+    print("=" * 55)
+    print("🚀 Free Fire API - PARALLEL VERSION")
+    print("⚡ Developed by: BISHAL & SENKU")
+    print("🔥 Checks ALL regions in PARALLEL")
+    print("🏆 Returns highest level region")
     print("=" * 55)
     app.run(host='0.0.0.0', port=5000, debug=False)
