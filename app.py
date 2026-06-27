@@ -1,4 +1,4 @@
-# app.py - Free Fire API (Vercel Compatible - FULLY WORKING)
+# app.py - Free Fire API (Vercel Compatible - Smart Region Detection)
 # ⚡ Developed by: BISHAL & SENKU
 
 import time
@@ -9,7 +9,6 @@ import sys
 import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from cachetools import TTLCache
 from google.protobuf import json_format
 from Crypto.Cipher import AES
 import base64
@@ -264,6 +263,43 @@ def GetAccountInformationSync(uid, region):
         print(f"❌ GetAccountInformation error for {region}: {e}")
         return None
 
+def get_player_level(data):
+    if not data:
+        return 0
+    basic = data.get("basicInfo", {})
+    return int(basic.get("level", 0))
+
+# ======================== SMART REGION DETECTION ==========================
+def check_all_regions_sync(uid):
+    """Check all regions and return the one with highest level"""
+    results = []
+    
+    print(f"\n🔍 Checking all regions for UID: {uid}")
+    
+    for region in REGION_PRIORITY:
+        print(f"🌍 Trying {region}...")
+        data = GetAccountInformationSync(uid, region)
+        
+        if data:
+            level = get_player_level(data)
+            results.append({
+                'region': region,
+                'data': data,
+                'level': level
+            })
+            print(f"✅ {region}: Level {level}")
+        else:
+            print(f"❌ {region}: No data")
+    
+    if results:
+        # Sort by level (highest first)
+        results.sort(key=lambda x: x['level'], reverse=True)
+        best = results[0]
+        print(f"\n🏆 Best region: {best['region']} (Level {best['level']})")
+        return best['region'], best['data']
+    
+    return None, None
+
 # ======================== FLASK ROUTES ==========================
 @app.route('/')
 def home():
@@ -273,6 +309,11 @@ def home():
         "version": "3.0",
         "release": RELEASEVERSION,
         "credit": "Developed by BISHAL & SENKU",
+        "features": {
+            "smart_region_detection": True,
+            "highest_level_selection": True,
+            "response_caching": True
+        },
         "endpoints": {
             "/get": {
                 "method": "GET",
@@ -280,7 +321,8 @@ def home():
                     "uid": "required - Free Fire UID",
                     "region": "optional - Force specific region"
                 },
-                "example": "/get?uid=123456789"
+                "example": "/get?uid=123456789",
+                "description": "Checks all regions and returns the one with highest level"
             },
             "/status": "GET - Token and region status",
             "/refresh": "GET - Force refresh tokens",
@@ -298,7 +340,15 @@ def get_account_info():
         return jsonify({
             "error": "UID required",
             "message": "Please provide a Free Fire UID",
-            "credit": "Developed by BISHAL & SENKU"
+            "credit": "Developed by BISHAL & SENKU",
+            "endpoints": {
+                "GET /get?uid=UID": "Smart auto-detection (all regions)",
+                "GET /get?uid=UID&region=BD": "Force specific region",
+                "GET /status": "Token status",
+                "GET /refresh": "Force refresh tokens",
+                "GET /stats": "API statistics",
+                "GET /clear_cache": "Clear response cache"
+            }
         }), 400
     
     if not re.match(r'^\d{5,15}$', uid):
@@ -308,21 +358,17 @@ def get_account_info():
             "credit": "Developed by BISHAL & SENKU"
         }), 400
     
+    # Check cache
     cached_data = get_cached_response(uid)
     if cached_data:
         return jsonify(cached_data)
     
-    print(f"\n🔍 Processing info for UID: {uid}")
-    
-    # Try all regions
-    for region in REGION_PRIORITY:
-        print(f"🌍 Trying {region}...")
-        data = GetAccountInformationSync(uid, region)
+    # If user specified region, use it directly
+    if region_param and region_param in SUPPORTED_REGIONS:
+        print(f"\n🎯 User specified region: {region_param}")
+        data = GetAccountInformationSync(uid, region_param)
         
         if data:
-            print(f"✅ Success with {region}")
-            
-            # Format basic response
             basic = data.get("basicInfo", {})
             clan = data.get("clanBasicInfo", {})
             profile = data.get("profileInfo", {})
@@ -330,7 +376,8 @@ def get_account_info():
             response = {
                 "status": "success",
                 "timestamp": datetime.now().isoformat(),
-                "region_used": region,
+                "region_used": region_param,
+                "region_detected": "user_specified",
                 "credit": "Developed by BISHAL & SENKU",
                 "AccountInfo": {
                     "AccountName": basic.get("nickname", "Unknown"),
@@ -345,9 +392,46 @@ def get_account_info():
                     "EquippedOutfit": profile.get("clothes", [])
                 }
             }
-            
             cache_response(uid, response)
             return jsonify(response)
+        else:
+            return jsonify({
+                "error": "Player not found in specified region",
+                "credit": "Developed by BISHAL & SENKU"
+            }), 404
+    
+    # Smart detection - check all regions and get highest level
+    best_region, best_data = check_all_regions_sync(uid)
+    
+    if best_data:
+        basic = best_data.get("basicInfo", {})
+        clan = best_data.get("clanBasicInfo", {})
+        profile = best_data.get("profileInfo", {})
+        
+        response = {
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "region_used": best_region,
+            "region_detected": "highest_level",
+            "credit": "Developed by BISHAL & SENKU",
+            "AccountInfo": {
+                "AccountName": basic.get("nickname", "Unknown"),
+                "AccountLevel": str(basic.get("level", "0")),
+                "AccountRegion": basic.get("region", "Unknown"),
+                "AccountLikes": str(basic.get("liked", "0")),
+                "AccountEXP": str(basic.get("exp", "0")),
+                "BrRankPoint": str(basic.get("rankingPoints", "0")),
+                "CsRankPoint": str(basic.get("csRankingPoints", "0")),
+                "GuildName": clan.get("clanName", "No Guild"),
+                "EquippedWeapon": basic.get("weaponSkinShows", []),
+                "EquippedOutfit": profile.get("clothes", [])
+            },
+            "AllRegionsChecked": True,
+            "BestRegionLevel": get_player_level(best_data)
+        }
+        
+        cache_response(uid, response)
+        return jsonify(response)
     
     return jsonify({
         "error": "Player not found in any region",
@@ -368,6 +452,7 @@ def token_status():
     return jsonify({
         "credit": "Developed by BISHAL & SENKU",
         "total_tokens": len(token_cache),
+        "cached_requests": len(request_cache),
         "tokens": status
     })
 
@@ -394,6 +479,10 @@ def api_stats():
             "cached_responses": len(request_cache),
             "active_tokens": len(token_cache),
             "supported_regions": len(SUPPORTED_REGIONS)
+        },
+        "regions": {
+            "priority": REGION_PRIORITY,
+            "available": list(token_cache.keys())
         }
     })
 
@@ -411,7 +500,14 @@ def clear_cache():
 load_cached_tokens()
 load_request_cache()
 
-print("🎯 Generating tokens...")
+print("=" * 55)
+print("🚀 Free Fire API Server v3.0 - Smart Region Detection")
+print("=" * 55)
+print("⚡ Developed by: BISHAL & SENKU")
+print("🔥 Smart Feature: Checks all regions and returns highest level")
+print("=" * 55)
+
+print("\n🎯 Generating tokens...")
 for region in ["ME", "BD", "IND"]:
     if region not in token_cache:
         token = generate_token_sync(region)
@@ -420,16 +516,15 @@ for region in ["ME", "BD", "IND"]:
             save_cached_tokens()
             print(f"✅ Token generated for {region}")
 
-print(f"✅ Total tokens: {len(token_cache)}")
+print(f"\n✅ Total tokens: {len(token_cache)}")
+print("=" * 55)
 
 # ======================== FOR VERCEL ==========================
 app = app
 
 # ======================== FOR LOCAL RUN ==========================
 if __name__ == '__main__':
-    print("=" * 55)
-    print("🚀 Free Fire API Server")
-    print("=" * 55)
-    print("⚡ Developed by: BISHAL & SENKU")
+    print("🚀 Running on http://localhost:5000")
+    print("📝 Example: http://localhost:5000/get?uid=1576195175")
     print("=" * 55)
     app.run(host='0.0.0.0', port=5000, debug=False)
