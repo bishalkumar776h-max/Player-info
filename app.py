@@ -1,4 +1,4 @@
-# server.py - Free Fire API Server with Enhanced Features
+# server.py - Free Fire API Server (Render/Vercel Compatible)
 # Run: python server.py
 
 import asyncio
@@ -21,7 +21,6 @@ from datetime import datetime
 # ============= CREDITS =============
 # ⚡ DEVELOPED BY: BISHAL & SENKU
 # 🔥 Free Fire API Server v3.0
-# 📌 Special Thanks to the FF Community
 # ====================================
 
 # ============= PATH FIX =============
@@ -50,13 +49,109 @@ REGION_PRIORITY = ["ME", "BD", "IND", "SG", "ID", "TH", "VN", "PK", "BR", "US", 
 SUPPORTED_REGIONS = set(REGION_PRIORITY)
 TOKEN_CACHE_FILE = 'token_cache.pkl'
 REQUEST_CACHE_FILE = 'request_cache.pkl'
-CACHE_TTL = 300  # 5 minutes cache
+CACHE_TTL = 300
 
 app = Flask(__name__)
 CORS(app)
 cache = TTLCache(maxsize=200, ttl=CACHE_TTL)
 token_manager = None
 request_cache = {}
+
+# ======================== SIMPLE ASCII BORDER ==========================
+def create_ascii_box(title, data_lines):
+    """Create simple ASCII box without special characters"""
+    border = "=" * 50
+    result = []
+    result.append(border)
+    result.append(f"  {title}")
+    result.append(border)
+    for key, value in data_lines:
+        result.append(f"  {key}: {value}")
+    result.append(border)
+    result.append(f"  Developed by: BISHAL & SENKU")
+    result.append(border)
+    return "\n".join(result)
+
+def format_ascii_response(data, region_used=None):
+    """Format response with simple ASCII"""
+    if not data:
+        return {"error": "No data"}
+    
+    basic = data.get("basicInfo", {})
+    clan = data.get("clanBasicInfo", {})
+    profile = data.get("profileInfo", {})
+    
+    player_name = basic.get("nickname", "Unknown")
+    uid = basic.get("uid", "0")
+    
+    # Create ASCII display
+    ascii_lines = [
+        ("Player", f"{player_name}"),
+        ("UID", f"{uid}"),
+        ("Region", f"{basic.get('region', 'Unknown')}"),
+        ("Level", f"{basic.get('level', '0')}"),
+        ("Likes", f"{basic.get('liked', '0')}"),
+        ("EXP", f"{basic.get('exp', '0')}"),
+        ("BR Rank Points", f"{basic.get('rankingPoints', '0')}"),
+        ("CS Rank Points", f"{basic.get('csRankingPoints', '0')}"),
+        ("Guild", f"{clan.get('clanName', 'No Guild')}"),
+        ("Region Used", f"{region_used or 'Auto'}")
+    ]
+    
+    ascii_display = create_ascii_box("FREE FIRE PLAYER INFO", ascii_lines)
+    
+    return {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "region_used": region_used,
+        "credit": "Developed by BISHAL & SENKU",
+        "ascii_display": ascii_display,
+        "AccountInfo": {
+            "AccountAvatarId": str(basic.get("headPic", "0")),
+            "AccountBPBadges": str(basic.get("badgeCnt", "0")),
+            "AccountBPID": str(basic.get("badgeId", "0")),
+            "AccountBannerId": str(basic.get("bannerId", "0")),
+            "AccountCreateTime": datetime.fromtimestamp(int(basic.get("createAt", "0"))).strftime('%Y-%m-%d %H:%M:%S') if basic.get("createAt", "0") != "0" else "0",
+            "AccountEXP": str(basic.get("exp", "0")),
+            "AccountLastLogin": datetime.fromtimestamp(int(basic.get("lastLoginAt", "0"))).strftime('%Y-%m-%d %H:%M:%S') if basic.get("lastLoginAt", "0") != "0" else "0",
+            "AccountLevel": str(basic.get("level", "0")),
+            "AccountLikes": str(basic.get("liked", "0")),
+            "AccountName": player_name,
+            "AccountRegion": basic.get("region", "Unknown"),
+            "AccountSeasonId": str(basic.get("seasonId", "0")),
+            "AccountType": str(basic.get("accountType", "0")),
+            "BrMaxRank": str(basic.get("maxRank", "0")),
+            "BrPeakRankPos": str(basic.get("peakRankPos", "0")),
+            "BrRankPoint": str(basic.get("rankingPoints", "0")),
+            "CsMaxRank": str(basic.get("csMaxRank", "0")),
+            "CsPeakRankPos": str(basic.get("csPeakRankPos", "0")),
+            "CsRankPoint": str(basic.get("csRankingPoints", "0")),
+            "EquippedWeapon": basic.get("weaponSkinShows", []),
+            "ReleaseVersion": basic.get("releaseVersion", RELEASEVERSION),
+            "ShowBrRank": str(basic.get("showBrRank", "0")),
+            "ShowCsRank": str(basic.get("showCsRank", "0")),
+            "Title": str(basic.get("title", "0")),
+            "HasElitePass": str(basic.get("hasElitePass", "0")),
+            "IsDeleted": str(basic.get("isDeleted", "0")),
+            "PeriodicRank": str(basic.get("periodicRank", "0")),
+            "PeriodicRankPoints": str(basic.get("periodicRankingPoints", "0")),
+            "IsBanned": str(basic.get("isBanned", "0")),
+            "BanReason": basic.get("banReason", ""),
+        },
+        "AccountProfileInfo": {
+            "EquippedOutfit": profile.get("clothes", []),
+        },
+        "GuildInfo": {
+            "GuildCapacity": str(clan.get("capacity", "0")),
+            "GuildID": str(clan.get("clanId", "0")),
+            "GuildLevel": str(clan.get("clanLevel", "0")),
+            "GuildMember": str(clan.get("memberNum", "0")),
+            "GuildName": clan.get("clanName", "No Guild"),
+            "GuildOwner": str(clan.get("captainId", "0")),
+            "HonorPoint": str(clan.get("honorPoint", "0")),
+        },
+        "socialinfo": {}
+    }
 
 # ======================== REQUEST CACHE ==========================
 def load_request_cache():
@@ -304,78 +399,10 @@ async def GetAccountInformation(uid, region):
         return None
 
 def get_player_level(data):
-    """Extract player level from account data"""
     if not data:
         return 0
     basic = data.get("basicInfo", {})
     return int(basic.get("level", 0))
-
-def format_response(data, region_used=None):
-    if not data:
-        return {"error": "No data"}
-    basic = data.get("basicInfo", {})
-    clan = data.get("clanBasicInfo", {})
-    profile = data.get("profileInfo", {})
-    
-    def fmt_time(ts):
-        if ts and ts != "0":
-            try:
-                return datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M:%S')
-            except:
-                return str(ts)
-        return "0"
-    
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat(),
-        "region_used": region_used,
-        "credit": "Developed by BISHAL & SENKU",
-        "AccountInfo": {
-            "AccountAvatarId": str(basic.get("headPic", "0")),
-            "AccountBPBadges": str(basic.get("badgeCnt", "0")),
-            "AccountBPID": str(basic.get("badgeId", "0")),
-            "AccountBannerId": str(basic.get("bannerId", "0")),
-            "AccountCreateTime": fmt_time(basic.get("createAt", "0")),
-            "AccountEXP": str(basic.get("exp", "0")),
-            "AccountLastLogin": fmt_time(basic.get("lastLoginAt", "0")),
-            "AccountLevel": str(basic.get("level", "0")),
-            "AccountLikes": str(basic.get("liked", "0")),
-            "AccountName": basic.get("nickname", "Unknown"),
-            "AccountRegion": basic.get("region", "Unknown"),
-            "AccountSeasonId": str(basic.get("seasonId", "0")),
-            "AccountType": str(basic.get("accountType", "0")),
-            "BrMaxRank": str(basic.get("maxRank", "0")),
-            "BrRankPoint": str(basic.get("rankingPoints", "0")),
-            "CsMaxRank": str(basic.get("csMaxRank", "0")),
-            "CsRankPoint": str(basic.get("csRankingPoints", "0")),
-            "EquippedWeapon": basic.get("weaponSkinShows", []),
-            "ReleaseVersion": basic.get("releaseVersion", RELEASEVERSION),
-            "ShowBrRank": str(basic.get("showBrRank", "0")),
-            "ShowCsRank": str(basic.get("showCsRank", "0")),
-            "Title": str(basic.get("title", "0")),
-            "HasElitePass": str(basic.get("hasElitePass", "0")),
-            "IsDeleted": str(basic.get("isDeleted", "0")),
-            "PeriodicRank": str(basic.get("periodicRank", "0")),
-            "PeriodicRankPoints": str(basic.get("periodicRankingPoints", "0")),
-            "BrPeakRankPos": str(basic.get("peakRankPos", "0")),
-            "CsPeakRankPos": str(basic.get("csPeakRankPos", "0")),
-            "IsBanned": str(basic.get("isBanned", "0")),
-            "BanReason": basic.get("banReason", ""),
-        },
-        "AccountProfileInfo": {
-            "EquippedOutfit": profile.get("clothes", []),
-        },
-        "GuildInfo": {
-            "GuildCapacity": str(clan.get("capacity", "0")),
-            "GuildID": str(clan.get("clanId", "0")),
-            "GuildLevel": str(clan.get("clanLevel", "0")),
-            "GuildMember": str(clan.get("memberNum", "0")),
-            "GuildName": clan.get("clanName", "No Guild"),
-            "GuildOwner": str(clan.get("captainId", "0")),
-            "HonorPoint": str(clan.get("honorPoint", "0")),
-        },
-        "socialinfo": {}
-    }
 
 # ======================== SMART REGION DETECTION ==========================
 async def check_all_regions_parallel(uid):
@@ -389,13 +416,11 @@ async def check_all_regions_parallel(uid):
     print(f"🚀 Checking {len(regions_to_check)} regions in parallel...")
     start_time = time.time()
     
-    # Create tasks for all regions
     tasks = []
     for region in regions_to_check:
         task = asyncio.create_task(GetAccountInformation(uid, region))
         tasks.append((region, task))
     
-    # Wait for all to complete (or timeout)
     results = []
     for region, task in tasks:
         try:
@@ -418,7 +443,6 @@ async def check_all_regions_parallel(uid):
     elapsed = time.time() - start_time
     print(f"⏱️ All regions checked in {elapsed:.2f} seconds")
     
-    # Find the region with highest level
     if results:
         best = max(results, key=lambda x: x['level'])
         print(f"🏆 Best region: {best['region']} (Level {best['level']})")
@@ -462,7 +486,6 @@ def get_account_info():
     uid = request.args.get('uid')
     region_param = request.args.get('region', '').upper()
     
-    # Validate UID
     if not uid:
         return jsonify({
             "error": "UID required",
@@ -484,14 +507,12 @@ def get_account_info():
             "credit": "Developed by BISHAL & SENKU"
         }), 400
     
-    # Check cache
     cached_data = get_cached_response(uid)
     if cached_data:
         return jsonify(cached_data)
     
     print(f"\n🔍 Processing info for UID: {uid}")
     
-    # If user specified a region, use it directly
     if region_param and region_param in SUPPORTED_REGIONS:
         print(f"🎯 User specified region: {region_param}")
         loop = asyncio.new_event_loop()
@@ -500,7 +521,7 @@ def get_account_info():
         loop.close()
         
         if data:
-            response = format_response(data, region_param)
+            response = format_ascii_response(data, region_param)
             response['from_cache'] = False
             cache_response(uid, response)
             return jsonify(response)
@@ -510,14 +531,13 @@ def get_account_info():
                 "credit": "Developed by BISHAL & SENKU"
             }), 404
     
-    # Smart detection - check all regions in parallel
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     best_region, best_data = loop.run_until_complete(check_all_regions_parallel(uid))
     loop.close()
     
     if best_data:
-        response = format_response(best_data, best_region)
+        response = format_ascii_response(best_data, best_region)
         response['from_cache'] = False
         cache_response(uid, response)
         return jsonify(response)
@@ -608,13 +628,14 @@ if __name__ == '__main__':
     print("🚀 Free Fire API Server v3.0")
     print("=" * 55)
     print("⚡ Developed by: BISHAL & SENKU")
-    print("🔥 Special Thanks to the FF Community")
+    print("🔥 Render/Vercel Compatible Version")
     print("=" * 55)
     print(f"📌 Features:")
     print("   ✅ Parallel region checking")
     print("   ✅ Smart region selection (highest level)")
     print("   ✅ Response caching")
     print("   ✅ Token auto-refresh")
+    print("   ✅ Simple ASCII output (Termux/Web compatible)")
     print("=" * 55)
 
     bg = threading.Thread(target=start_background_tasks, daemon=True)
@@ -632,7 +653,7 @@ if __name__ == '__main__':
     print("=" * 55)
     print("🚀 API running on port 5000")
     print("📝 Endpoints:")
-    print("   GET /get?uid=UID        - Smart auto-detection (parallel)")
+    print("   GET /get?uid=UID        - Smart auto-detection")
     print("   GET /get?uid=UID&region=BD - Force specific region")
     print("   GET /status             - Token status")
     print("   GET /refresh            - Force refresh tokens")
