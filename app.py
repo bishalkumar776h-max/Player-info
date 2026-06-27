@@ -1,4 +1,4 @@
-# server.py - Free Fire API Server (Render/Vercel Compatible)
+# server.py - Free Fire API Server (Vercel/Render Compatible)
 # Run: python server.py
 
 import asyncio
@@ -57,9 +57,9 @@ cache = TTLCache(maxsize=200, ttl=CACHE_TTL)
 token_manager = None
 request_cache = {}
 
-# ======================== SIMPLE ASCII BORDER ==========================
+# ======================== ASCII DISPLAY ==========================
 def create_ascii_box(title, data_lines):
-    """Create simple ASCII box without special characters"""
+    """Create simple ASCII box - Cross platform compatible"""
     border = "=" * 50
     result = []
     result.append(border)
@@ -84,7 +84,6 @@ def format_ascii_response(data, region_used=None):
     player_name = basic.get("nickname", "Unknown")
     uid = basic.get("uid", "0")
     
-    # Create ASCII display
     ascii_lines = [
         ("Player", f"{player_name}"),
         ("UID", f"{uid}"),
@@ -623,44 +622,28 @@ def start_background_tasks():
 
     loop.run_forever()
 
+# For Vercel/Render - use this as entry point
 if __name__ == '__main__':
     print("=" * 55)
     print("🚀 Free Fire API Server v3.0")
     print("=" * 55)
     print("⚡ Developed by: BISHAL & SENKU")
-    print("🔥 Render/Vercel Compatible Version")
+    print("🔥 Vercel/Render Compatible Version")
     print("=" * 55)
-    print(f"📌 Features:")
-    print("   ✅ Parallel region checking")
-    print("   ✅ Smart region selection (highest level)")
-    print("   ✅ Response caching")
-    print("   ✅ Token auto-refresh")
-    print("   ✅ Simple ASCII output (Termux/Web compatible)")
-    print("=" * 55)
-
+    
+    # Start background tasks
     bg = threading.Thread(target=start_background_tasks, daemon=True)
     bg.start()
-
-    print("⏳ Initializing tokens for all regions...")
-    time.sleep(15)
-
-    if token_manager:
-        print(f"✅ Tokens cached: {len(token_manager.tokens)}")
-        for region in REGION_PRIORITY:
-            mark = "✓" if region in token_manager.tokens else "✗"
-            print(f"  {mark} {region}")
-
+    
+    print("⏳ Initializing tokens...")
+    time.sleep(10)
+    
     print("=" * 55)
     print("🚀 API running on port 5000")
-    print("📝 Endpoints:")
-    print("   GET /get?uid=UID        - Smart auto-detection")
-    print("   GET /get?uid=UID&region=BD - Force specific region")
-    print("   GET /status             - Token status")
-    print("   GET /refresh            - Force refresh tokens")
-    print("   GET /stats              - API statistics")
-    print("   GET /clear_cache        - Clear response cache")
-    print("=" * 55)
     print("💡 Credit: Developed by BISHAL & SENKU")
     print("=" * 55)
+    
+    app.run(host='0.0.0.0', port=5000, debug=False)
 
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+# For Vercel - need to expose app
+app = app
